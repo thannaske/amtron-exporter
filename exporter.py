@@ -23,6 +23,8 @@ class AmtronMetrics:
         self.type2_status = Gauge("type2_status", "Type 2 Connector Status")
         self.load_contactor_cycles = Gauge("load_contactor_cycles", "Number of type 2 load contactor cycles")
         self.type2_plug_cycles = Gauge("type2_plug_cycles", "Number of type 2 plug cycles")
+        self.ocpp_voltage = Gauge("ocpp_voltage", "OCPP Voltage", ["phase"])
+        self.ocpp_frequency = Gauge("ocpp_frequency", "OCPP Frequency")
 
         # Authentication
         self.session_id = None
@@ -76,12 +78,20 @@ class AmtronMetrics:
             self.error_state.set(parser.error_state())
             self.load_contactor_cycles.set(parser.load_contactor_cycles())
             self.type2_plug_cycles.set(parser.type2_plug_cycles())
+            self.ocpp_frequency.set(parser.ocpp_frequency())
 
             # Charging Amperage (with labels)
             charging_amperage = parser.charging_amperage()
             self.charging_amperage.labels(phase="L1").set(charging_amperage["L1"])
             self.charging_amperage.labels(phase="L2").set(charging_amperage["L2"])
             self.charging_amperage.labels(phase="L3").set(charging_amperage["L3"])
+
+            # OCPP Voltage (with labels)
+            ocpp_voltage = parser.ocpp_voltage()
+            self.ocpp_voltage.labels(phase="L1").set(ocpp_voltage["L1"])
+            self.ocpp_voltage.labels(phase="L2").set(ocpp_voltage["L2"])
+            self.ocpp_voltage.labels(phase="L3").set(ocpp_voltage["L3"])
+
 
     def login(self) -> bool:
         token_request = requests.get(url=f"http://{self.ip_address}:80/json/login")
@@ -214,6 +224,58 @@ class AmtronParser:
             "L2": -99.0,
             "L3": -99.0,
         }
+
+    def ocpp_voltage(self) -> dict:
+        try:
+            for group in self.data["groups"]:
+                if "key" in group and group["key"] == "emanager_status":
+                    for field in group["fields"]:
+                        if "key" in field and field["key"] == "FirstMeterTable_meter":
+                            for subfield in field["value"]["items"]:
+                                if "key" in subfield and subfield["key"] == "OcppMeterVoltage_meter":
+                                    regex = r"^\(\s(?P<L1>\d+)\s\|\s(?P<L2>\d+)\s\|\s(?P<L3>\d+)\s\)\s\[V\]$"
+                                    match = re.match(regex, subfield["c2"])
+
+                                    if match:
+                                        return {
+                                            "L1": float(match.group("L1")),
+                                            "L2": float(match.group("L2")),
+                                            "L3": float(match.group("L3")),
+                                        }
+                                    else:
+                                        return {
+                                            "L1": -1.0,
+                                            "L2": -1.0,
+                                            "L3": -1.0,
+                                        }
+        except Exception as e:
+            print(f"ERROR: Unable to parse OCPP voltage. Exception: {str(e)}")
+
+        return {
+            "L1": -1.0,
+            "L2": -1.0,
+            "L3": -1.0,
+        }
+
+    def ocpp_frequency(self) -> float:
+        try:
+            for group in self.data["groups"]:
+                if "key" in group and group["key"] == "emanager_status":
+                    for field in group["fields"]:
+                        if "key" in field and field["key"] == "FirstMeterTable_meter":
+                            for subfield in field["value"]["items"]:
+                                if "key" in subfield and subfield["key"] == "OcppMeterFrequency_meter":
+                                    regex = r"^(?P<value>\d+\.\d+)\sHz$"
+                                    match = re.match(regex, subfield["c2"])
+
+                                    if match:
+                                        return match.group("value")
+                                    else:
+                                        return -1.0
+        except Exception as e:
+            print(f"ERROR: Unable to parse OCPP frequency. Exception: {str(e)}")
+
+        return -1.0
 
     def error_state(self) -> int:
         try:
