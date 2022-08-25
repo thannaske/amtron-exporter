@@ -20,7 +20,7 @@ class AmtronMetrics:
         self.offered_amperage = Gauge("offered_amperage", "Offered amperage to the vehicle (as indicated by PWM)")
         self.charging_amperage = Gauge("charging_amperage", "Amperage of all phases while charging", ["phase"])
         self.error_state = Gauge("error_state", "Whether the charger indicates an error or not")
-        self.type2_status = Enum("type2_status", "Type 2 Connector Status", states=["A", "B", "C", "D", "E", "F"])
+        self.type2_status = Gauge("type2_status", "Type 2 Connector Status")
         self.load_contactor_cycles = Gauge("load_contactor_cycles", "Number of type 2 load contactor cycles")
         self.type2_plug_cycles = Gauge("type2_plug_cycles", "Number of type 2 plug cycles")
 
@@ -72,7 +72,7 @@ class AmtronMetrics:
             # Gauges and histograms without labels
             self.env_temperature.set(parser.env_temperature())
             self.offered_amperage.set(parser.offered_amperage())
-            self.type2_status.state(parser.type2_status())
+            self.type2_status.set(parser.type2_status())
             self.error_state.set(parser.error_state())
             self.load_contactor_cycles.set(parser.load_contactor_cycles())
             self.type2_plug_cycles.set(parser.type2_plug_cycles())
@@ -136,7 +136,7 @@ class AmtronParser:
 
         return -99.0
 
-    def type2_status(self) -> str:
+    def type2_status(self) -> float:
         try:
             for group in self.data["groups"]:
                 if "key" in group and group["key"] == "system_status":
@@ -146,13 +146,26 @@ class AmtronParser:
                             match = re.match(regex, field["value"])
 
                             if match:
-                                return str(match.group("value"))
+                                status = str(match.group("value"))
+                                if status == "A":
+                                    return 1.0
+                                elif status == "B":
+                                    return 2.0
+                                elif status == "C":
+                                    return 3.0
+                                elif status == "D":
+                                    return 4.0
+                                elif status == "E":
+                                    return 5.0
+                                elif status == "F":
+                                    return 6.0
+
                             else:
-                                return "F"
+                                return -1.0
         except Exception as e:
             print(f"ERROR: Unable to parse type 2 status. Exception: {str(e)}")
 
-        return "F"
+        return -1.0
 
     def offered_amperage(self) -> float:
         try:
