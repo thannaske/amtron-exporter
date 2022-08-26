@@ -34,7 +34,11 @@ class AmtronMetrics:
 
         while True:
             logging.info("Starting to fetch information from Amtron web interface.")
-            self.fetch()
+            try:
+                self.fetch()
+            except Exception as e:
+                logging.error(f"Couldn't fetch information from Amtron web interface: {str(e)} - Trying again in {self.polling_interval_seconds} seconds ...")
+
             logging.info("Finished fetching information from Amtron web interface. Sleeping ...")
 
             time.sleep(self.polling_interval_seconds)
